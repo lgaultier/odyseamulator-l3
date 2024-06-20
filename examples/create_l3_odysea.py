@@ -1,3 +1,15 @@
+# vim: ts=4:sts=4:sw=4
+#
+# @author <lucile.gaultier@oceandatalab.com>
+# @date 2024-01-10
+#
+# Copyright (C) 2024 OceanDataLab
+
+"""
+Create Odysea L3 like data from netcdf files and a python parameter file
+"""
+
+
 from odysim.swath_sampling import OdyseaSwath
 
 import numpy
@@ -48,6 +60,7 @@ def init_parameters(params):
     params.wind_dir = getattr(params, 'wind_dir', 0)
     params.var_wind = getattr(params, 'var_wind', ('geo5_u10m', 'geo5_v10m'))
     params.var_current = getattr(params, 'var_current', ('SSU', 'SSV'))
+    params.dic_coord = getattr(params, 'dic_coord', {})
     return None
 
 
@@ -128,30 +141,32 @@ def colocateSwathCurrents(model: xarray.Dataset, orbit: xarray.Dataset,
 
 
 def load_orbit(orbit_fname: str, config_fname: str,
-               start_time: datetime.datetime, end_time: datetime.datetime
-               ) -> xarray.Dataset:
-    odysea = OdyseaSwath(orbit_fname=orbit_fname, config_fname=config_fname)
+               start_time: datetime.datetime, end_time: datetime.datetime,
+               year_ref: Optional[int] = 2020) -> xarray.Dataset:
+    odysea = OdyseaSwath(orbit_fname=orbit_fname, config_fname=config_fname,
+                         year_ref=year_ref)
     orbits = odysea.getOrbits(start_time=start_time, end_time=end_time)
     return orbits
 
 
 def load_model(path_model: str, start: datetime.datetime,
-               end: datetime.datetime):
+               end: datetime.datetime, dic_coord: Optional[dict] = {}
+               ) -> xarray.Dataset:
 
     model = xarray.open_mfdataset(path_model, combine='by_coords')
-    model.time.values.astype(float)
-    #if 'pacific_fall' in path_model:
-    #    model.coords['time_corr'] = model.time
-    #else:
-    #    _time = model.time.astype(float) + 20 * 86400 * 365.25 * 10**9
-    #    _time.astype('datetime64[ns]')
-    #    model.coords['time_corr'] = _time.astype('datetime64[ns]')
-        # could also use assign_coords
-    #model2 = model.swap_dims({'time': 'time_corr'})
+    #model.time.values.astype(float)
+    if 'time_units' in dic_coord.keys():
+        attrs = {'units': dic_coord['time_units']} #'days since 1950-01-01'}
+        time = xarray.Dataset({'time': ('time', model.time.values, attrs)})
+        time = xarray.decode_cf(time)
+        model['time'] = time['time'].astype('datetime64[ns]')
+        _ = dic_coord.pop('time_units')
 
     strstart = datetime.datetime.strftime(start, '%Y-%m-%d')
     strend = datetime.datetime.strftime(end, '%Y-%m-%d')
     model = model.sel(time=slice(strstart, strend))
+    if len(dic_coord.keys()) > 0:
+        model = model.rename(name_dict=dic_coord)
     return model
 
 
@@ -169,7 +184,7 @@ def interp_model(o: xarray.Dataset, model: xarray.Dataset, bb: list,
                  asc: Optional[bool] = True) -> xarray.Dataset:
     if bb[1] > 180:
         o['lon'] = numpy.mod(o['lon'] + 360, 360)
-        model['lon'] = numpy.mod(model['lon'] + 360, 360)
+        model[var_lon] = numpy.mod(model[var_lon] + 360, 360)
     if asc is True:
         _slice = slice(0, int(o.along_track.shape[0]/2))
         ind0 = -1
@@ -289,6 +304,29 @@ def angle_across(lon, lat) -> numpy.ndarray:
     return angle
 
 
+def make_oi(o: xarray.Dataset, signu: Optional[float] = 1) -> xarray.Dataset:
+    import optimal_interpolation as oi
+    dic_in = {}
+    list_key = ('radial_angle_fore', 'radial_angle_aft', 'ur_fore', 'ur_aft',
+                'ur_nonoise_aft', 'ur_nonoise_fore', 'along_track', 'err_fore',
+                'err_aft',
+                'cross_track')
+    for key in list_key:
+        dic_in[key] = o[key].data
+    angle = angle_across(o['lon'].data, o['lat'].data)
+    dic_out = oi.perform_oi_on_l3(dic_in, ('ur', 'ur_nonoise', 'err'))
+
+    # l2c_dic[key]['ac'][numpy.abs(grd['ac2']) < ac_thresh] = numpy.nan
+    for key in ('ur', 'ur_nonoise', 'err'):
+        u_out = alac2xy(dic_out[f'{key}_ac'], dic_out[f'{key}_al'], angle, signu)
+        dic_out[f'{key}_eastward'], dic_out[f'{key}_northward'] = u_out
+    u_out = xy2alac(o['u_model'].data, o['v_model'].data, angle, signu)
+    dic_out['u_ac_model'], dic_out['u_al_model'] = u_out
+    for key in dic_out.keys():
+        o = o.assign({key: (['along_track', 'cross_track'], dic_out[key])})
+    return o
+
+
 def make_uv(o: xarray.Dataset, signu: Optional[float] = 1) -> xarray.Dataset:
     dic_in = {}
     dic_out = {}
@@ -301,14 +339,15 @@ def make_uv(o: xarray.Dataset, signu: Optional[float] = 1) -> xarray.Dataset:
         dic_in[key] = o[key].data
     for key in list_radial:
         norm = numpy.sqrt(dic_in[f'{key}_fore']**2 + dic_in[f'{key}_aft']**2)
-        dic_out[f'{key}_al'] = norm /2 /numpy.cos(dic_in['encoder_aft'])
-        dic_out[f'{key}_ac'] = norm /2 /numpy.sin(dic_in['encoder_aft'])
+        enc_angle = numpy.pi * 1 / 2 + numpy.deg2rad(dic_in['encoder_aft'])
+        dic_out[f'{key}_al'] = norm /2 /numpy.cos(enc_angle)
+        dic_out[f'{key}_ac'] = norm /2 /numpy.sin(enc_angle)
 
     angle = angle_across(o['lon'].data, o['lat'].data)
     # l2c_dic[key]['ac'][numpy.abs(grd['ac2']) < ac_thresh] = numpy.nan
     for key in list_radial:
         u_out = alac2xy(dic_out[f'{key}_ac'], dic_out[f'{key}_al'], angle, signu)
-        dic_out[f'{key}_eastward'], dic_out[f'{key}_northward'] = u_out
+        dic_out[f'{key}_northward'], dic_out[f'{key}_eastward'] = u_out
     u_out = xy2alac(o['u_model'].data, o['v_model'].data, angle, signu)
     dic_out['u_ac_model'], dic_out['u_al_model'] = u_out
     for key in dic_out.keys():
@@ -337,7 +376,8 @@ def generate_pass(params, i: int, c: int, o: xarray.Dataset,
         o_out = error_on_swath(o_out, vradial_interpolator,
                                wind=wind_o, wind_norm=params.wind_speed,
                                wind_dir=params.wind_dir)
-        o_out = make_uv(o_out, signu=signu)
+        #o_out = make_uv(o_out, signu=signu)
+        o_out = make_oi(o_out, signu=signu)
         file_out = os.path.join(params.path_out,
                                 f'{params.pattern_out}_c{c:02d}_p{i:03d}.nc')
         o_out.to_netcdf(file_out, 'w')
@@ -345,14 +385,17 @@ def generate_pass(params, i: int, c: int, o: xarray.Dataset,
 
 if __name__ == '__main__':
     conf = 'confE2'
+    conf = 'confE2ibi'
     params = load_python_file(f'params_{conf}.py')
     orbits = load_orbit(params.orbit_file, params.config_file,
-                        params.start_time, params.end_time)
-    model = load_model(params.path_model, params.start_time, params.end_time)
+                        params.start_time, params.end_time,
+                        year_ref=params.year_ref)
+    model = load_model(params.path_model, params.start_time, params.end_time,
+                       dic_coord=params.dic_coord)
     wind_data = None
     if params.wind_path is not None:
         wind_data = load_model(params.path_wind, params.start_time,
-                               params.end_time)
+                               params.end_time, dic_coord=params.dic_coord)
     vradial_interpolator = generate_interpolator(params.lut_fn,
                                                  key=params.sigma_vr)
     os.makedirs(params.path_out, exist_ok=True)

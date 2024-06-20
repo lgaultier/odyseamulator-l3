@@ -32,6 +32,7 @@ elif conf == 'ConfB':
 lut_fn = os.path.join(lut_dir, lutfile)
 
 # Model 
+year_ref = 2020
 start_time = datetime.datetime.strptime('2020-01-21:00','%Y-%m-%d:%H')
 end_time = datetime.datetime.strptime('2020-03-23:12','%Y-%m-%d:%H')
 path_model = '/mnt/data_b/mitgcm/SSC/*.nc'

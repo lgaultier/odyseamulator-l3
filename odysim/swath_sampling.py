@@ -1,3 +1,11 @@
+# vim: ts=4:sts=4:sw=4
+#
+# @author A. Wineteer
+# @author <lucile.gaultier@oceandatalab.com>
+# @date 2023-01-10
+#
+
+
 import xarray as xr
 import numpy as np
 import pandas as pd
@@ -11,7 +19,7 @@ import importlib.resources as import_resources
 from odysim.coordinates import *
 from odysim import utils
 
-    
+
 def splineFactory(x,y,smoothing=.1):
     spl = UnivariateSpline(x, y)
     spl.set_smoothing_factor(.1)
@@ -115,7 +123,8 @@ class WGS84:
 
 class OdyseaSwath:
     
-    def __init__(self,orbit_fname='orbit_out_2020_2023_height590km.npz',config_fname='wacm_sampling_config.py'):
+    def __init__(self,orbit_fname='orbit_out_2020_2023_height590km.npz',
+                 config_fname='wacm_sampling_config.py', year_ref=2020):
                 
         """
         Initialize an OdyseaSwath object. Eventaully, this will contain configuration etc. TODO..
@@ -146,7 +155,7 @@ class OdyseaSwath:
             
         
             
-        self.loadOrbitXYZ(fn=orbit_fname)
+        self.loadOrbitXYZ(fn=orbit_fname, year_ref=year_ref)
         self.config_fname=config_fname
     
     
@@ -308,12 +317,13 @@ class OdyseaSwath:
 
         return ds
 
-    def loadOrbitXYZ(self, fn='orbit_out_2020_2023_height590km.npz'):
+    def loadOrbitXYZ(self, fn='orbit_out_2020_2023_height590km.npz',
+                     year_ref=2020):
         if 'txt' in os.path.splitext(fn)[-1]:
             orbit_out = np.loadtxt(fn, delimiter=" ", usecols=(0, 1, 2, 3, 4, 5, 6))
             time = orbit_out[:, 0]
-
-            dd = [(datetime.datetime(1939, 1, 1) + datetime.timedelta(days=x)) for x in time]
+            year = 1950 - (2031 - year_ref)
+            dd = [(datetime.datetime(year, 1, 1) + datetime.timedelta(days=x)) for x in time]
             t2 = [(ddx - datetime.datetime(1970, 1, 1)).total_seconds() for ddx in dd] 
 
             self.time_stamp_vector_coarse = np.array(t2)

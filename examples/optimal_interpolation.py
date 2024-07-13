@@ -24,22 +24,23 @@ def perform_oi_on_l3(obs: dict, listkey: list, desc: Optional[bool] = False
                      ) -> dict:
     dic_out = {}
     for key in listkey:
-        dic_out[f'{key}_al'] = numpy.full(numpy.shape(obs[f'{key}_fore']),
+        dic_out[f'{key}_northward'] = numpy.full(numpy.shape(obs[f'{key}_fore']),
                                           fill_value=numpy.nan)
-        dic_out[f'{key}_ac'] = numpy.full(numpy.shape(obs[f'{key}_fore']),
+        dic_out[f'{key}_eastward'] = numpy.full(numpy.shape(obs[f'{key}_fore']),
                                           fill_value=numpy.nan)
         # dic_out[key] = {'al': numpy.full(numpy.shape(obs[f'{key}_fore'])),
         #                'ac': numpy.full(numpy.shape(obs[f'{key}_fore']))}
     for i in range(len(obs['along_track'])):
         for j in range(len(obs['cross_track'])):
-            obs_angle = [numpy.deg2rad(obs['radial_angle_fore'][i, j]),
-                         numpy.deg2rad(obs['radial_angle_aft'][i, j])]
+            rot = numpy.pi / 2
+            obs_angle = [numpy.deg2rad(rot + obs['radial_angle_fore'][i, j]),
+                         numpy.deg2rad(rot + obs['radial_angle_aft'][i, j])]
             for key in listkey:
                 uradial = [obs[f'{key}_fore'][i, j], obs[f'{key}_aft'][i, j]]
                 eta = inversion(obs_angle, uradial, dist=None)
                 if eta is not None:
-                    dic_out[f'{key}_al'][i, j] = eta[0]
-                    dic_out[f'{key}_ac'][i, j] = eta[1]
+                    dic_out[f'{key}_northward'][i, j] = eta[1]
+                    dic_out[f'{key}_eastward'][i, j] = eta[0]
     return dic_out
 
 

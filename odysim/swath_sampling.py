@@ -18,7 +18,10 @@ import importlib.resources as import_resources
 
 from odysim.coordinates import *
 from odysim import utils
+from odysim import metadata
 
+ATTR_GEO = metadata.GEOMETRY
+ATTR_COORD = metadata.COORDINATES
 
 def splineFactory(x,y,smoothing=.1):
     spl = UnivariateSpline(x, y)
@@ -238,8 +241,12 @@ class OdyseaSwath:
                    }
 
 
-        ds = ds.assign_coords(coords={'along_track': (['along_track'], np.arange(0,along_track_sz)),
-                                      'cross_track': (['cross_track'],  np.arange(0,cross_track_sz))})
+        ds = ds.assign_coords(coords={'along_track': (['along_track'],
+                                      np.arange(0,along_track_sz),
+                                      ATTR_COORD['along_track']),
+                                      'cross_track': (['cross_track'],
+                                      np.arange(0,cross_track_sz),
+                                      ATTR_COORD['cross_track'])})
 
 #         sample_time_track = np.moveaxis(sample_time_track,-1,0)
 #         sample_lat_track  = np.moveaxis(sample_lat_track, -1,0)
@@ -255,30 +262,19 @@ class OdyseaSwath:
         sample_time_track_dt = [np.datetime64('1970-01-01') + np.timedelta64(int(stt*1000),'ms') for stt in sample_time_track.flatten()]
         sample_time_track_dt = np.reshape(sample_time_track_dt,np.shape(sample_time_track)).astype('datetime64[s]')
                                           
-        ds = ds.assign({'sample_time': ([ 'along_track', 'cross_track'], np.array(sample_time_track_dt)),
-                       'lat': (['along_track', 'cross_track'], np.array(sample_lat_track,dtype='float32')),
-                       'lon': (['along_track', 'cross_track'], np.array(sample_lon_track,dtype='float32')),
-                       'swath_blanking': (['cross_track'], swath_blanking)})
+        ds = ds.assign({'sample_time': ([ 'along_track', 'cross_track'],
+                                        np.array(sample_time_track_dt),
+                                        ),
+                       'lat': (['along_track', 'cross_track'],
+                               np.array(sample_lat_track,dtype='float32'),
+                               ATTR_COORD['lat']),
+                       'lon': (['along_track', 'cross_track'],
+                               np.array(sample_lon_track,dtype='float32'),
+                               ATTR_COORD['lon']),
+                       'swath_blanking': (['cross_track'], swath_blanking,
+                               ATTR_GEO['swath_blanking'])})
 
-        ds['swath_blanking'].attrs['comment'] = 'Flagged in areas of the swath that are expected to have unacceptable error performance.'
 
-
-        ds['lat'].attrs['valid_min'] = -90.00
-        ds['lat'].attrs['valid_max'] = 90.00
-        ds['lat'].attrs['long_name'] = 'latitude'
-        ds['lat'].attrs['standard_name'] = 'latitude'
-        ds['lat'].attrs['units'] = 'degrees_north'
-
-        ds['lon'].attrs['valid_min'] = -180.00
-        ds['lon'].attrs['valid_max'] = 180.00
-        ds['lon'].attrs['long_name'] = 'longitude'
-        ds['lon'].attrs['standard_name'] = 'longitude'
-        ds['lon'].attrs['units'] = 'degrees_north'
-
-        ds['sample_time'].attrs['long_name'] = 'Time of WaCM overpass.'
-        ds['sample_time'].attrs['comments'] = 'Time of WaCM overpass in seconds since 1970.'
-        ds['sample_time'].attrs['standard_name'] = 'time'
-        #ds['sample_time'].attrs['units'] = 'seconds since 1970-01-01 00:00:00'
 
         ds.attrs['title'] = 'Odysea Simple Orbit Sampling V0.1'
         ds.attrs['project'] = 'Odysea'
@@ -324,14 +320,18 @@ class OdyseaSwath:
             time = orbit_out[:, 0]
             year = 1950 - (2031 - year_ref)
             dd = [(datetime.datetime(year, 1, 1) + datetime.timedelta(days=x)) for x in time]
-            t2 = [(ddx - datetime.datetime(1970, 1, 1)).total_seconds() for ddx in dd] 
+            t2 = [(ddx - datetime.datetime(1970, 1, 1)).total_seconds() for ddx in dd]
 
             self.time_stamp_vector_coarse = np.array(t2)
 
-            self.orbit_cut_points = np.arange(0, len(self.time_stamp_vector_coarse), 63)
             self.coarse_x = orbit_out[:, 1]
             self.coarse_y = orbit_out[:, 2]
             self.coarse_z = orbit_out[:, 3]
+            lat, _, _  = ecef_to_llh(self.coarse_x, self.coarse_y, self.coarse_z)
+            dlat = np.diff(lat)
+            pole_crossing = np.where(np.diff(np.sign(dlat)))[0]
+            pole_crossing = pole_crossing + 1
+            self.orbit_cut_points = np.array(np.append(0, pole_crossing))
             self.coarse_s = np.zeros((len(time)))
             dx2 = (self.coarse_x[1:] - self.coarse_x[:-1])**2
             dy2 = (self.coarse_y[1:] - self.coarse_y[:-1])**2
@@ -428,15 +428,20 @@ class OdyseaSwath:
         azimuth_aft =  utils.normalizeTo180((encoder_aft + bearing[:,np.newaxis]))
 
 
-        orbit = orbit.assign({'encoder_fore': (['along_track', 'cross_track'], encoder_fore),
-                              'encoder_aft' : (['along_track', 'cross_track'], encoder_aft)})
+        orbit = orbit.assign({'encoder_fore': (['along_track', 'cross_track'],
+                              encoder_fore, ATTR_GEO['encoder_fore']),
+                              'encoder_aft' : (['along_track', 'cross_track'],
+                              encoder_aft, ATTR_GEO['encoder_aft'])})
         
         
-        orbit = orbit.assign({'azimuth_fore': (['along_track', 'cross_track'], azimuth_fore),
-                              'azimuth_aft' : (['along_track', 'cross_track'], azimuth_aft)})
+        orbit = orbit.assign({'azimuth_fore': (['along_track', 'cross_track'],
+                              azimuth_fore, ATTR_GEO['azimuth_fore']),
+                              'azimuth_aft' : (['along_track', 'cross_track'],
+                              azimuth_aft, ATTR_GEO['azimuth_aft'])})
         
         
-        orbit = orbit.assign({'bearing': (['along_track'], bearing)})
+        orbit = orbit.assign({'bearing': (['along_track'], bearing,
+                              ATTR_GEO['bearing'])})
         
         
         return orbit

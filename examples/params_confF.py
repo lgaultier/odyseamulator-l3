@@ -2,11 +2,11 @@ import os
 import datetime
 
 # Geometry
-conf = 'E2'
+conf = 'F'
 #workdir = '/home/lgaultier/src/odysea-science-simulator/odysim/'
 workdir = '/mnt/data/CNES_odysea/'
 orbit_file = os.path.join(workdir, 'odysea_ephemerides_2024-06-04',
-                          'odysea-800km-98p6deg-430-MLTAN_orb_ECEF.txt')
+                          'odysea-587km-97p704deg-430-MLTAN_2024_02_27_orb_ECEF.txt')
 config_file = os.path.join(workdir, conf, f'wacm_sampling_config_Conf{conf}.py')
 
 # Instrument

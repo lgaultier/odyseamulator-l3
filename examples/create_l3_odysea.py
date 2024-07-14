@@ -445,10 +445,10 @@ def generate_pass(params, i: int, c: int, o: xarray.Dataset,
 
 
 if __name__ == '__main__':
-    conf = 'confE2'
+    #conf = 'confE2'
     #conf = 'confF'
-    conf = 'confglorys_F'
-    #conf = 'confE2ibi'
+    #conf = 'confglorys_F'
+    conf = 'confE2ibi'
     params = load_python_file(f'params_{conf}.py')
     orbits = load_orbit(params.orbit_file, params.config_file,
                         params.start_time, params.end_time,
@@ -467,9 +467,10 @@ if __name__ == '__main__':
                                                  key=params.sigma_vr)
     os.makedirs(params.path_out, exist_ok=True)
     i = 0
-    c = 3
+    c = 9
     #pass = 400
-    start = c * npass
+    c = 0
+    start = 0 #c * npass
     stop = (c + 2) * npass + 1
     for o in tqdm.tqdm(itertools.islice(orbits, start, stop, 1)):
         i += 1
